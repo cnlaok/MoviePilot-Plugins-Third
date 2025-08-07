@@ -12,6 +12,107 @@ from app.plugins import _PluginBase
 from app.schemas.types import EventType
 
 
+class CloudSyncMediaClient:
+    """CloudSyncMedia客户端"""
+    
+    def __init__(self, base_url: str, username: str, password: str):
+        self.base_url = base_url.rstrip('/')
+        self.username = username
+        self.password = password
+        self.token = None
+        self.token_expiry = 0
+        
+        # 配置请求会话
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        })
+        
+        # 初始化时获取token
+        self._ensure_valid_token()
+    
+    def _login(self) -> dict:
+        """登录CMS系统获取token"""
+        try:
+            response = self.session.post(
+                f'{self.base_url}/api/auth/login',
+                json={
+                    'username': self.username,
+                    'password': self.password
+                },
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('code') != 200 or 'data' not in data:
+                raise ValueError(f'CMS登录失败: {data}')
+                
+            return data['data']
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f'CMS登录失败: {str(e)}')
+            raise
+    
+    def _ensure_valid_token(self):
+        """确保有效的token"""
+        current_time = time.time()
+        
+        # 如果token不存在或距离过期时间不到1小时，重新获取token
+        if not self.token or current_time >= (self.token_expiry - 3600):
+            login_data = self._login()
+            self.token = login_data['token']
+            
+            # 设置token过期时间为24小时后
+            self.token_expiry = current_time + 86400
+            
+            # 更新session的Authorization header
+            self.session.headers.update({
+                'Authorization': f'Bearer {self.token}'
+            })
+            
+            logger.info("CMS token已更新")
+    
+    def add_share_down(self, url: str) -> dict:
+        """添加分享链接到CMS系统进行转存"""
+        if not url:
+            raise ValueError('转存链接不能为空')
+        
+        try:
+            self._ensure_valid_token()
+            
+            response = self.session.post(
+                f'{self.base_url}/api/cloud/add_share_down',
+                json={'url': url},
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            logger.info(f"CMS转存请求已发送: {url}")
+            return result
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                # token可能过期，强制重新获取
+                self.token = None
+                self._ensure_valid_token()
+                
+                # 重试请求
+                response = self.session.post(
+                    f'{self.base_url}/api/cloud/add_share_down',
+                    json={'url': url},
+                    timeout=30
+                )
+                response.raise_for_status()
+                return response.json()
+            raise
+        except Exception as e:
+            logger.error(f'CMS转存请求失败: {str(e)}')
+            raise
+
+
 class NullbrApiClient:
     """Nullbr API客户端"""
     
@@ -188,8 +289,16 @@ class NullbrSearch(_PluginBase):
         self._search_timeout = 30
         self._client = None
         
-        # 用户搜索结果缓存
+        # CloudSyncMedia配置
+        self._cms_enabled = False
+        self._cms_url = ""
+        self._cms_username = ""
+        self._cms_password = ""
+        self._cms_client = None
+        
+        # 用户搜索结果缓存和资源缓存
         self._user_search_cache = {}  # {userid: {'results': [...], 'timestamp': time.time()}}
+        self._user_resource_cache = {}  # {userid: {'resources': [...], 'title': str, 'timestamp': time.time()}}
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -216,7 +325,15 @@ class NullbrSearch(_PluginBase):
             self._enable_ed2k = config.get("enable_ed2k", True)
             self._search_timeout = config.get("search_timeout", 30)
             
+            # CloudSyncMedia配置
+            self._cms_enabled = config.get("cms_enabled", False)
+            self._cms_url = config.get("cms_url", "")
+            self._cms_username = config.get("cms_username", "")
+            self._cms_password = config.get("cms_password", "")
+            
             logger.info(f"Nullbr资源优先级设置: {' > '.join(self._resource_priority)}")
+            if self._cms_enabled:
+                logger.info(f"CloudSyncMedia已启用: {self._cms_url}")
         
         # 初始化API客户端
         if self._enabled and self._app_id:
@@ -230,6 +347,22 @@ class NullbrSearch(_PluginBase):
             if not self._app_id:
                 logger.warning("Nullbr插件配置错误: 缺少APP_ID")
             self._client = None
+        
+        # 初始化CloudSyncMedia客户端
+        if self._cms_enabled and self._cms_url and self._cms_username and self._cms_password:
+            try:
+                self._cms_client = CloudSyncMediaClient(
+                    self._cms_url, 
+                    self._cms_username, 
+                    self._cms_password
+                )
+                logger.info("CloudSyncMedia客户端已初始化")
+            except Exception as e:
+                logger.error(f"CloudSyncMedia初始化失败: {str(e)}")
+                self._cms_enabled = False
+                self._cms_client = None
+        else:
+            self._cms_client = None
 
     def get_state(self) -> bool:
         return self._enabled
@@ -531,25 +664,123 @@ class NullbrSearch(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                        {
-                                            'component': 'VCol',
-                                            'props': {'cols': 12, 'md': 6},
-                                            'content': [
                                             {
-                                                'component': 'VTextField',
-                                                'props': {
-                                                'model': 'search_timeout',
-                                                'label': '搜索超时时间(秒)',
-                                                'placeholder': '30',
-                                                'hint': '单次API请求的超时时间',
-                                                'persistent-hint': True,
-                                                'type': 'number',
-                                                'min': 10,
-                                                'max': 120
-                                                }
+                                                'component': 'VCol',
+                                                'props': {'cols': 12},
+                                                'content': [
+                                                    {
+                                                        'component': 'VAlert',
+                                                        'props': {
+                                                            'type': 'info',
+                                                            'variant': 'tonal'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'span',
+                                                                'text': '🚀 CloudSyncMedia转存配置 - 自动转存资源到CMS系统'
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
                                             }
-                                            ]
-                                        }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VSwitch',
+                                                        'props': {
+                                                            'model': 'cms_enabled',
+                                                            'label': '启用CloudSyncMedia',
+                                                            'hint': '开启后支持自动转存资源到CMS系统',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'cms_url',
+                                                            'label': 'CMS服务器地址',
+                                                            'placeholder': 'http://your-cms-domain.com',
+                                                            'hint': 'CloudSyncMedia服务器的完整URL地址',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'cms_username',
+                                                            'label': 'CMS用户名',
+                                                            'placeholder': '请输入CMS登录用户名',
+                                                            'hint': '用于登录CMS系统的用户名',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'cms_password',
+                                                            'label': 'CMS密码',
+                                                            'placeholder': '请输入CMS登录密码',
+                                                            'hint': '用于登录CMS系统的密码',
+                                                            'persistent-hint': True,
+                                                            'type': 'password'
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VTextField',
+                                                        'props': {
+                                                            'model': 'search_timeout',
+                                                            'label': '搜索超时时间(秒)',
+                                                            'placeholder': '30',
+                                                            'hint': '单次API请求的超时时间',
+                                                            'persistent-hint': True,
+                                                            'type': 'number',
+                                                            'min': 10,
+                                                            'max': 120
+                                                        }
+                                                    }
+                                                ]
+                                            }
                                         ]
                                     }
                                     ]
@@ -576,6 +807,10 @@ class NullbrSearch(_PluginBase):
         "priority_2": "magnet",
         "priority_3": "ed2k",
         "priority_4": "video",
+        "cms_enabled": False,
+        "cms_url": "",
+        "cms_username": "",
+        "cms_password": "",
         "search_timeout": 30
         }
 
@@ -842,6 +1077,16 @@ class NullbrSearch(_PluginBase):
         # 检查是否为编号选择（纯数字，包含问号的情况）
         elif clean_text.isdigit():
             number = int(clean_text)
+            
+            # 先检查是否有资源缓存（用于CMS转存）
+            if self._cms_enabled and self._cms_client and userid in self._user_resource_cache:
+                cache = self._user_resource_cache[userid]
+                if time.time() - cache['timestamp'] < 3600:  # 1小时内有效
+                    if 1 <= number <= len(cache['resources']):
+                        logger.info(f"检测到资源转存请求: {number}")
+                        self.handle_resource_transfer(number, channel, userid)
+                        return
+            
             logger.info(f"检测到编号选择: {number}")
             self.handle_resource_selection(number, channel, userid)
         
@@ -1117,17 +1362,54 @@ class NullbrSearch(_PluginBase):
     def _format_and_send_resources(self, resources: dict, resource_type: str, title: str, channel: str, userid: str):
         """格式化并发送资源链接"""
         try:
+            resource_list = resources.get(resource_type, [])
+            if not resource_list:
+                self.post_message(
+                    channel=channel,
+                    title="无资源",
+                    text=f"没有找到「{title}」的{resource_type}资源。",
+                    userid=userid
+                )
+                return
+            
+            # 缓存资源到用户缓存中，用于CMS转存
+            resource_cache = []
+            for res in resource_list[:10]:  # 最多缓存10个
+                if resource_type == "115":
+                    url = res.get('share_link', '')
+                elif resource_type == "magnet":
+                    url = res.get('magnet', '')
+                elif resource_type in ["video", "ed2k"]:
+                    url = res.get('url', res.get('link', ''))
+                else:
+                    url = ''
+                
+                if url:
+                    resource_cache.append({
+                        'url': url,
+                        'title': res.get('title', res.get('name', '未知')),
+                        'size': res.get('size', '未知'),
+                        'type': resource_type
+                    })
+            
+            # 保存到用户资源缓存
+            self._user_resource_cache[userid] = {
+                'resources': resource_cache,
+                'title': title,
+                'resource_type': resource_type,
+                'timestamp': time.time()
+            }
+            
+            # 格式化显示文本
             reply_text = f"🎯 「{title}」的{resource_type}资源:\n\n"
             
             if resource_type == "115":
-                resource_list = resources.get('115', [])
-                for i, res in enumerate(resource_list[:10], 1):  # 最多显示10个
+                for i, res in enumerate(resource_list[:10], 1):
                     reply_text += f"{i}. {res.get('title', '未知')}\n"
                     reply_text += f"   大小: {res.get('size', '未知')}\n"
                     reply_text += f"   链接: {res.get('share_link', '无')}\n\n"
                     
             elif resource_type == "magnet":
-                resource_list = resources.get('magnet', [])
                 for i, res in enumerate(resource_list[:10], 1):
                     reply_text += f"{i}. {res.get('name', '未知')}\n"
                     reply_text += f"   大小: {res.get('size', '未知')}\n"
@@ -1136,18 +1418,21 @@ class NullbrSearch(_PluginBase):
                     reply_text += f"   磁力: {res.get('magnet', '无')}\n\n"
                     
             elif resource_type in ["video", "ed2k"]:
-                resource_list = resources.get(resource_type, [])
                 for i, res in enumerate(resource_list[:10], 1):
                     reply_text += f"{i}. {res.get('name', res.get('title', '未知'))}\n"
                     if res.get('size'):
                         reply_text += f"   大小: {res.get('size')}\n"
                     reply_text += f"   链接: {res.get('url', res.get('link', '无'))}\n\n"
             
-            if len(reply_text) > 4000:  # Telegram消息长度限制
-                reply_text = reply_text[:3900] + "...\n\n(内容过长已截断)"
+            if len(reply_text) > 3500:  # 留出空间给CMS提示
+                reply_text = reply_text[:3400] + "...\n\n(内容过长已截断)\n\n"
             
-            if not reply_text.strip().endswith('无'):
-                reply_text += f"📊 共找到 {len(resources.get(resource_type, []))} 个资源"
+            reply_text += f"📊 共找到 {len(resource_list)} 个资源\n\n"
+            
+            # 如果启用了CloudSyncMedia，添加转存提示
+            if self._cms_enabled and self._cms_client:
+                reply_text += "🚀 CloudSyncMedia转存:\n"
+                reply_text += "发送资源编号进行转存，如: 1、2、3..."
             
             self.post_message(
                 channel=channel,
@@ -1251,6 +1536,97 @@ class NullbrSearch(_PluginBase):
                 userid=userid
             )
     
+    def handle_resource_transfer(self, resource_id: int, channel: str, userid: str):
+        """处理资源转存请求"""
+        try:
+            # 检查CMS是否启用
+            if not self._cms_enabled or not self._cms_client:
+                self.post_message(
+                    channel=channel,
+                    title="功能未启用",
+                    text="CloudSyncMedia转存功能未启用，请在设置中配置。",
+                    userid=userid
+                )
+                return
+            
+            # 检查资源缓存
+            cache = self._user_resource_cache.get(userid)
+            if not cache or time.time() - cache['timestamp'] > 3600:
+                self.post_message(
+                    channel=channel,
+                    title="缓存过期",
+                    text="资源缓存已过期，请重新获取资源。",
+                    userid=userid
+                )
+                return
+            
+            resources = cache['resources']
+            if resource_id < 1 or resource_id > len(resources):
+                self.post_message(
+                    channel=channel,
+                    title="无效编号",
+                    text=f"请输入有效的资源编号 (1-{len(resources)})。",
+                    userid=userid
+                )
+                return
+            
+            # 获取指定的资源
+            selected_resource = resources[resource_id - 1]
+            title = selected_resource['title']
+            url = selected_resource['url']
+            size = selected_resource['size']
+            resource_type = selected_resource['type']
+            
+            logger.info(f"开始转存资源: {title} ({resource_type}) -> {url}")
+            
+            # 发送转存中的提示
+            self.post_message(
+                channel=channel,
+                title="转存中",
+                text=f"🚀 正在转存资源到CloudSyncMedia:\n\n"
+                     f"📁 {title}\n"
+                     f"💾 大小: {size}\n"
+                     f"🔗 类型: {resource_type}\n\n"
+                     f"请稍等...",
+                userid=userid
+            )
+            
+            # 调用CMS转存API
+            result = self._cms_client.add_share_down(url)
+            
+            # 处理转存结果
+            if result.get('code') == 200:
+                self.post_message(
+                    channel=channel,
+                    title="转存成功",
+                    text=f"✅ 资源转存成功!\n\n"
+                         f"📁 {title}\n"
+                         f"💾 大小: {size}\n"
+                         f"🚀 {result.get('msg', '已添加到转存队列')}\n\n"
+                         f"请到CloudSyncMedia查看转存进度。",
+                    userid=userid
+                )
+            else:
+                error_msg = result.get('msg', '转存失败')
+                self.post_message(
+                    channel=channel,
+                    title="转存失败",
+                    text=f"❌ 资源转存失败:\n\n"
+                         f"📁 {title}\n"
+                         f"🚫 错误: {error_msg}\n\n"
+                         f"请检查CMS配置或稍后重试。",
+                    userid=userid
+                )
+                
+        except Exception as e:
+            logger.error(f"资源转存异常: {str(e)}")
+            self.post_message(
+                channel=channel,
+                title="转存错误",
+                text=f"转存过程中发生错误: {str(e)}",
+                userid=userid
+            )
+    
     def fallback_to_moviepilot_search(self, title: str, channel: str, userid: str):
         """回退到MoviePilot原始搜索功能"""
         logger.info(f"启动MoviePilot原始搜索: {title}")
@@ -1321,8 +1697,22 @@ class NullbrSearch(_PluginBase):
         """
         退出插件
         """
-        if self._client and hasattr(self._client, '_session'):
-            self._client._session.close()
-        self._client = None
-        self._enabled = False
-        logger.info("Nullbr资源搜索插件已停止")
+        try:
+            # 清理Nullbr客户端
+            if self._client and hasattr(self._client, '_session'):
+                self._client._session.close()
+            self._client = None
+            
+            # 清理CMS客户端
+            if self._cms_client and hasattr(self._cms_client, 'session'):
+                self._cms_client.session.close()
+            self._cms_client = None
+            
+            # 清理缓存
+            self._user_search_cache.clear()
+            self._user_resource_cache.clear()
+            
+            self._enabled = False
+            logger.info("Nullbr资源搜索插件已停止")
+        except Exception as e:
+            logger.error(f"插件停止异常: {str(e)}")
