@@ -168,7 +168,7 @@ class NullbrSearch(_PluginBase):
     plugin_name = "Nullbr资源搜索"
     plugin_desc = "优先使用Nullbr API搜索影视资源，支持多种资源类型（115网盘、磁力、ed2k、m3u8）"
     plugin_icon = "https://raw.githubusercontent.com/Hqyel/MoviePilot-Plugins/main/icons/nullbr.png"
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
     plugin_author = "Hqyel"
     author_url = "https://github.com/Hqyel"
     plugin_config_prefix = "nullbr_"
@@ -180,7 +180,7 @@ class NullbrSearch(_PluginBase):
         self._enabled = False
         self._app_id = None
         self._api_key = None
-        self._resource_priority = ["115", "magnet", "video", "ed2k"]
+        self._resource_priority = ["115", "magnet", "ed2k", "video"]  # 默认优先级
         self._enable_115 = True
         self._enable_magnet = True
         self._enable_video = True
@@ -196,12 +196,27 @@ class NullbrSearch(_PluginBase):
             self._enabled = config.get("enabled", False)
             self._app_id = config.get("app_id")
             self._api_key = config.get("api_key")
-            self._resource_priority = config.get("resource_priority", ["115", "magnet", "video", "ed2k"])
+            
+            # 构建资源优先级列表
+            priority_list = []
+            for i in range(1, 5):
+                priority = config.get(f"priority_{i}")
+                if priority and priority not in priority_list:
+                    priority_list.append(priority)
+            
+            # 如果配置不完整，使用默认优先级
+            if len(priority_list) < 4:
+                self._resource_priority = ["115", "magnet", "ed2k", "video"]
+            else:
+                self._resource_priority = priority_list
+            
             self._enable_115 = config.get("enable_115", True)
             self._enable_magnet = config.get("enable_magnet", True)
             self._enable_video = config.get("enable_video", True)
             self._enable_ed2k = config.get("enable_ed2k", True)
             self._search_timeout = config.get("search_timeout", 30)
+            
+            logger.info(f"Nullbr资源优先级设置: {' > '.join(self._resource_priority)}")
         
         # 初始化API客户端
         if self._enabled and self._app_id:
@@ -398,6 +413,124 @@ class NullbrSearch(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12},
+                                                'content': [
+                                                    {
+                                                        'component': 'VAlert',
+                                                        'props': {
+                                                            'type': 'info',
+                                                            'variant': 'tonal'
+                                                        },
+                                                        'content': [
+                                                            {
+                                                                'component': 'span',
+                                                                'text': '🎯 资源优先级设置 - 自动按优先级获取资源（可拖拽排序）'
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'priority_1',
+                                                            'label': '第一优先级',
+                                                            'items': [
+                                                                {'title': '115网盘', 'value': '115'},
+                                                                {'title': '磁力链接', 'value': 'magnet'},
+                                                                {'title': 'ED2K链接', 'value': 'ed2k'},
+                                                                {'title': 'M3U8视频', 'value': 'video'}
+                                                            ],
+                                                            'hint': '优先获取的资源类型',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'priority_2',
+                                                            'label': '第二优先级',
+                                                            'items': [
+                                                                {'title': '115网盘', 'value': '115'},
+                                                                {'title': '磁力链接', 'value': 'magnet'},
+                                                                {'title': 'ED2K链接', 'value': 'ed2k'},
+                                                                {'title': 'M3U8视频', 'value': 'video'}
+                                                            ],
+                                                            'hint': '第二选择的资源类型',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'priority_3',
+                                                            'label': '第三优先级',
+                                                            'items': [
+                                                                {'title': '115网盘', 'value': '115'},
+                                                                {'title': '磁力链接', 'value': 'magnet'},
+                                                                {'title': 'ED2K链接', 'value': 'ed2k'},
+                                                                {'title': 'M3U8视频', 'value': 'video'}
+                                                            ],
+                                                            'hint': '第三选择的资源类型',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCol',
+                                                'props': {'cols': 12, 'md': 6},
+                                                'content': [
+                                                    {
+                                                        'component': 'VSelect',
+                                                        'props': {
+                                                            'model': 'priority_4',
+                                                            'label': '第四优先级',
+                                                            'items': [
+                                                                {'title': '115网盘', 'value': '115'},
+                                                                {'title': '磁力链接', 'value': 'magnet'},
+                                                                {'title': 'ED2K链接', 'value': 'ed2k'},
+                                                                {'title': 'M3U8视频', 'value': 'video'}
+                                                            ],
+                                                            'hint': '最后选择的资源类型',
+                                                            'persistent-hint': True
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
                                         {
                                             'component': 'VCol',
                                             'props': {'cols': 12, 'md': 6},
@@ -439,6 +572,10 @@ class NullbrSearch(_PluginBase):
         "enable_magnet": True,
         "enable_video": True,
         "enable_ed2k": True,
+        "priority_1": "115",
+        "priority_2": "magnet",
+        "priority_3": "ed2k",
+        "priority_4": "video",
         "search_timeout": 30
         }
 
@@ -779,8 +916,8 @@ class NullbrSearch(_PluginBase):
             
             if self._api_key:
                 reply_text += "📋 使用方法:\n"
-                reply_text += "• 发送数字选择项目: 如 \"1\"\n" 
-                reply_text += "• 发送数字.资源类型获取链接: 如 \"1.115\" \"2.magnet\""
+                reply_text += f"• 发送数字自动获取资源: 如 \"1\" (优先级: {' > '.join(self._resource_priority)})\n" 
+                reply_text += "• 手动指定资源类型: 如 \"1.115\" \"2.magnet\" (可选)"
             else:
                 reply_text += "💡 提示: 请配置API_KEY以获取下载链接"
             
@@ -829,44 +966,54 @@ class NullbrSearch(_PluginBase):
             title = selected.get('title', '未知标题')
             media_type = selected.get('media_type', 'unknown')
             year = selected.get('release_date', selected.get('first_air_date', ''))[:4] if selected.get('release_date') or selected.get('first_air_date') else ''
+            tmdbid = selected.get('tmdbid')
             
-            # 显示详细信息
-            reply_text = f"📺 选择的资源: {title}"
-            if year:
-                reply_text += f" ({year})"
-            reply_text += f"\n类型: {'电影' if media_type == 'movie' else '剧集' if media_type == 'tv' else media_type}"
-            reply_text += f"\nTMDB ID: {selected.get('tmdbid')}"
-            
-            if selected.get('overview'):
-                reply_text += f"\n简介: {selected.get('overview')[:100]}..."
-            
-            # 显示可用的资源类型
-            reply_text += f"\n\n🔗 可用资源类型:"
-            resource_options = []
-            
-            if selected.get('115-flg') and self._enable_115:
-                resource_options.append(f"• 115网盘: 发送 \"{number}.115\"")
-            if selected.get('magnet-flg') and self._enable_magnet:
-                resource_options.append(f"• 磁力链接: 发送 \"{number}.magnet\"")
-            if selected.get('video-flg') and self._enable_video:
-                resource_options.append(f"• 在线观看: 发送 \"{number}.video\"")
-            if selected.get('ed2k-flg') and self._enable_ed2k:
-                resource_options.append(f"• ED2K链接: 发送 \"{number}.ed2k\"")
-            
-            if resource_options:
-                reply_text += f"\n" + "\n".join(resource_options)
+            if not self._api_key:
+                # 如果没有API_KEY，显示详细信息
+                reply_text = f"📺 选择的资源: {title}"
+                if year:
+                    reply_text += f" ({year})"
+                reply_text += f"\n类型: {'电影' if media_type == 'movie' else '剧集' if media_type == 'tv' else media_type}"
+                reply_text += f"\nTMDB ID: {tmdbid}"
                 
-                if not self._api_key:
+                if selected.get('overview'):
+                    reply_text += f"\n简介: {selected.get('overview')[:100]}..."
+                
+                # 显示可用的资源类型
+                reply_text += f"\n\n🔗 可用资源类型:"
+                resource_options = []
+                
+                if selected.get('115-flg') and self._enable_115:
+                    resource_options.append(f"• 115网盘")
+                if selected.get('magnet-flg') and self._enable_magnet:
+                    resource_options.append(f"• 磁力链接")
+                if selected.get('video-flg') and self._enable_video:
+                    resource_options.append(f"• 在线观看")
+                if selected.get('ed2k-flg') and self._enable_ed2k:
+                    resource_options.append(f"• ED2K链接")
+                
+                if resource_options:
+                    reply_text += f"\n" + "\n".join(resource_options)
                     reply_text += "\n\n⚠️ 注意: 需要配置API_KEY才能获取具体下载链接"
+                else:
+                    reply_text += f"\n暂无可用资源类型"
+                
+                self.post_message(
+                    channel=channel,
+                    title="资源详情",
+                    text=reply_text,
+                    userid=userid
+                )
             else:
-                reply_text += f"\n暂无可用资源类型"
-            
-            self.post_message(
-                channel=channel,
-                title="资源详情",
-                text=reply_text,
-                userid=userid
-            )
+                # 如果有API_KEY，直接按优先级获取资源
+                self.post_message(
+                    channel=channel,
+                    title="获取中",
+                    text=f"正在按优先级获取「{title}」的资源...",
+                    userid=userid
+                )
+                
+                self.get_resources_by_priority(selected, channel, userid)
             
         except Exception as e:
             logger.error(f"处理资源选择异常: {str(e)}")
@@ -1015,6 +1162,92 @@ class NullbrSearch(_PluginBase):
                 channel=channel,
                 title="错误",
                 text=f"处理资源信息时出现错误: {str(e)}",
+                userid=userid
+            )
+    
+    def get_resources_by_priority(self, selected: dict, channel: str, userid: str):
+        """按优先级获取资源"""
+        try:
+            title = selected.get('title', '未知标题')
+            media_type = selected.get('media_type', 'unknown')
+            tmdbid = selected.get('tmdbid')
+            
+            if not tmdbid:
+                self.post_message(
+                    channel=channel,
+                    title="错误",
+                    text="该资源缺少TMDB ID，无法获取下载链接。",
+                    userid=userid
+                )
+                return
+            
+            logger.info(f"按优先级获取资源: {title} (TMDB: {tmdbid})")
+            logger.info(f"优先级顺序: {' > '.join(self._resource_priority)}")
+            
+            # 按优先级尝试获取资源
+            for priority_type in self._resource_priority:
+                # 检查该资源类型是否可用
+                flag_key = f"{priority_type}-flg"
+                if not selected.get(flag_key):
+                    logger.info(f"跳过 {priority_type}: 资源不可用")
+                    continue
+                
+                # 检查该资源类型是否启用
+                enable_key = f"_enable_{priority_type}"
+                if not getattr(self, enable_key, True):
+                    logger.info(f"跳过 {priority_type}: 已在配置中禁用")
+                    continue
+                
+                logger.info(f"尝试获取 {priority_type} 资源...")
+                
+                # 调用相应的API获取资源
+                resources = None
+                if media_type == 'movie':
+                    resources = self._client.get_movie_resources(tmdbid, priority_type)
+                elif media_type == 'tv':
+                    resources = self._client.get_tv_resources(tmdbid, priority_type)
+                
+                if resources and resources.get(priority_type):
+                    # 找到资源，发送结果并结束
+                    resource_name = {
+                        '115': '115网盘',
+                        'magnet': '磁力链接', 
+                        'ed2k': 'ED2K链接',
+                        'video': 'M3U8视频'
+                    }.get(priority_type, priority_type)
+                    
+                    logger.info(f"成功获取 {priority_type} 资源，共 {len(resources[priority_type])} 个")
+                    
+                    self.post_message(
+                        channel=channel,
+                        title="获取成功",
+                        text=f"✅ 已获取「{title}」的{resource_name}资源",
+                        userid=userid
+                    )
+                    
+                    # 格式化并发送资源链接
+                    self._format_and_send_resources(resources, priority_type, title, channel, userid)
+                    return
+                else:
+                    logger.info(f"{priority_type} 资源不可用，尝试下一优先级")
+            
+            # 所有优先级都没有找到资源，回退到MoviePilot搜索
+            logger.info(f"所有优先级资源都不可用，回退到MoviePilot搜索")
+            self.post_message(
+                channel=channel,
+                title="切换搜索",
+                text=f"Nullbr没有找到「{title}」的任何资源，正在使用MoviePilot原始搜索...",
+                userid=userid
+            )
+            
+            self.fallback_to_moviepilot_search(title, channel, userid)
+            
+        except Exception as e:
+            logger.error(f"按优先级获取资源异常: {str(e)}")
+            self.post_message(
+                channel=channel,
+                title="错误",
+                text=f"获取资源时出现错误: {str(e)}",
                 userid=userid
             )
     
