@@ -1,0 +1,14 @@
+{
+  "nullbrsearch": {
+    "name": "Nullbr资源搜索",
+    "description": "优先使用Nullbr API搜索影视资源，支持115网盘、磁力、ed2k、m3u8等多种资源类型。在MoviePilot搜索其他资源站之前优先查找Nullbr资源，提高搜索效率。",
+    "labels": "资源",
+    "version": "1.0.4",
+    "icon": "https://raw.githubusercontent.com/Hqyel/MoviePilot-Plugins/main/icons/nullbr.png",
+    "author": "Hqyel",
+    "level": 1,
+    "history": {
+            "v1.0.4": "初始上架版本"
+        }
+  }
+}
