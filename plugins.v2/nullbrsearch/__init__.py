@@ -29,6 +29,12 @@ class CloudSyncMediaClient:
             'Accept': 'application/json'
         })
         
+        # CMS一般为内网服务，禁用代理访问
+        self.session.proxies = {
+            'http': None,
+            'https': None
+        }
+        
         # 初始化时获取token
         self._ensure_valid_token()
     
@@ -41,7 +47,7 @@ class CloudSyncMediaClient:
                     'username': self.username,
                     'password': self.password
                 },
-                timeout=30
+                timeout=(10, 30)
             )
             response.raise_for_status()
             data = response.json()
@@ -85,7 +91,7 @@ class CloudSyncMediaClient:
             response = self.session.post(
                 f'{self.base_url}/api/cloud/add_share_down',
                 json={'url': url},
-                timeout=30
+                timeout=(10, 30)
             )
             response.raise_for_status()
             result = response.json()
@@ -103,7 +109,7 @@ class CloudSyncMediaClient:
                 response = self.session.post(
                     f'{self.base_url}/api/cloud/add_share_down',
                     json={'url': url},
-                    timeout=30
+                    timeout=(10, 30)
                 )
                 response.raise_for_status()
                 return response.json()
@@ -128,11 +134,14 @@ class NullbrApiClient:
             'Content-Type': 'application/json'
         })
         
-        # 配置重试策略
+        # 根据配置使用系统代理（Nullbr在中国大陆需要代理访问）
+        # 不设置proxies，使用系统默认代理配置
+        
+        # 配置重试策略，增加超时相关的状态码
         try:
             retry_strategy = Retry(
                 total=3,
-                status_forcelist=[429, 500, 502, 503, 504],
+                status_forcelist=[429, 500, 502, 503, 504, 408],  # 添加408 Request Timeout
                 allowed_methods=["HEAD", "GET", "OPTIONS"],
                 backoff_factor=1
             )
@@ -140,7 +149,7 @@ class NullbrApiClient:
             try:
                 retry_strategy = Retry(
                     total=3,
-                    status_forcelist=[429, 500, 502, 503, 504],
+                    status_forcelist=[429, 500, 502, 503, 504, 408],
                     method_whitelist=["HEAD", "GET", "OPTIONS"],
                     backoff_factor=1
                 )
@@ -150,6 +159,20 @@ class NullbrApiClient:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
+    
+    def _make_request(self, url: str, params: dict, headers: dict, use_proxy: bool = True) -> requests.Response:
+        """发起HTTP请求，支持代理重试机制"""
+        session = self._session
+        
+        # 如果不使用代理，创建临时session
+        if not use_proxy:
+            session = requests.Session()
+            session.headers.update(self._session.headers)
+            session.proxies = {'http': None, 'https': None}
+        
+        timeout = 5 if use_proxy else (10, 30)  # 使用代理时超时5s，无代理时用更长超时
+        
+        return session.get(url, params=params, headers=headers, timeout=timeout)
     
     def search(self, query: str, page: int = 1) -> Optional[Dict]:
         """搜索媒体资源"""
@@ -169,14 +192,24 @@ class NullbrApiClient:
             logger.info(f"请求参数: {params}")
             logger.info(f"请求头: X-APP-ID={self._app_id}, X-API-KEY={'已设置' if self._api_key else '未设置'}")
             
-            response = self._session.get(
-                f"{self._base_url}/search",
-                params=params,
-                headers=headers,
-                timeout=30
-            )
+            url = f"{self._base_url}/search"
             
-            logger.info(f"响应状态码: {response.status_code}")
+            # 首先尝试使用系统代理，5秒超时
+            try:
+                logger.debug("尝试使用系统代理访问Nullbr API")
+                response = self._make_request(url, params, headers, use_proxy=True)
+                logger.info(f"使用系统代理请求成功，响应状态码: {response.status_code}")
+                
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout, 
+                   requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
+                logger.warning(f"使用系统代理访问超时/连接失败: {str(e)}，尝试直连")
+                try:
+                    # 代理失败，尝试不使用代理直连
+                    response = self._make_request(url, params, headers, use_proxy=False)
+                    logger.info(f"直连请求成功，响应状态码: {response.status_code}")
+                except Exception as direct_e:
+                    logger.error(f"直连也失败: {str(direct_e)}")
+                    return None
             
             if response.status_code == 200:
                 return response.json()
@@ -199,14 +232,24 @@ class NullbrApiClient:
             
         try:
             headers = {'X-APP-ID': self._app_id, 'X-API-KEY': self._api_key}
+            url = f"{self._base_url}/movie/{tmdbid}/{resource_type}"
             
-            response = self._session.get(
-                f"{self._base_url}/movie/{tmdbid}/{resource_type}",
-                headers=headers,
-                timeout=30
-            )
-            
-            logger.info(f"获取电影资源响应状态码: {response.status_code}")
+            # 首先尝试使用系统代理，5秒超时
+            try:
+                logger.debug("尝试使用系统代理获取电影资源")
+                response = self._make_request(url, {}, headers, use_proxy=True)
+                logger.info(f"使用系统代理请求成功，响应状态码: {response.status_code}")
+                
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout, 
+                   requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
+                logger.warning(f"使用系统代理访问超时/连接失败: {str(e)}，尝试直连")
+                try:
+                    # 代理失败，尝试不使用代理直连
+                    response = self._make_request(url, {}, headers, use_proxy=False)
+                    logger.info(f"直连请求成功，响应状态码: {response.status_code}")
+                except Exception as direct_e:
+                    logger.error(f"直连也失败: {str(direct_e)}")
+                    return None
             
             if response.status_code == 200:
                 return response.json()
@@ -235,14 +278,24 @@ class NullbrApiClient:
             
         try:
             headers = {'X-APP-ID': self._app_id, 'X-API-KEY': self._api_key}
+            url = f"{self._base_url}/tv/{tmdbid}/{resource_type}"
             
-            response = self._session.get(
-                f"{self._base_url}/tv/{tmdbid}/{resource_type}",
-                headers=headers,
-                timeout=30
-            )
-            
-            logger.info(f"获取剧集资源响应状态码: {response.status_code}")
+            # 首先尝试使用系统代理，5秒超时
+            try:
+                logger.debug("尝试使用系统代理获取剧集资源")
+                response = self._make_request(url, {}, headers, use_proxy=True)
+                logger.info(f"使用系统代理请求成功，响应状态码: {response.status_code}")
+                
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout, 
+                   requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
+                logger.warning(f"使用系统代理访问超时/连接失败: {str(e)}，尝试直连")
+                try:
+                    # 代理失败，尝试不使用代理直连
+                    response = self._make_request(url, {}, headers, use_proxy=False)
+                    logger.info(f"直连请求成功，响应状态码: {response.status_code}")
+                except Exception as direct_e:
+                    logger.error(f"直连也失败: {str(direct_e)}")
+                    return None
             
             if response.status_code == 200:
                 return response.json()
@@ -265,11 +318,11 @@ class NullbrApiClient:
 
 
 class NullbrSearch(_PluginBase):
-  # 插件基本信息
+    # 插件基本信息
     plugin_name = "Nullbr资源搜索"
     plugin_desc = "优先使用Nullbr API搜索影视资源，支持多种资源类型（115网盘、磁力、ed2k、m3u8）"
     plugin_icon = "https://raw.githubusercontent.com/Hqyel/MoviePilot-Plugins/main/icons/nullbr.png"
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
     plugin_author = "Hqyel"
     author_url = "https://github.com/Hqyel"
     plugin_config_prefix = "nullbr_"
@@ -296,11 +349,15 @@ class NullbrSearch(_PluginBase):
         self._cms_password = ""
         self._cms_client = None
         
+        
         # 用户搜索结果缓存和资源缓存
         self._user_search_cache = {}  # {userid: {'results': [...], 'timestamp': time.time()}}
         self._user_resource_cache = {}  # {userid: {'resources': [...], 'title': str, 'timestamp': time.time()}}
 
     def init_plugin(self, config: dict = None):
+        # 确保插件能被正确识别，即使配置不完整
+        logger.info(f"正在初始化 {self.plugin_name} v{self.plugin_version}")
+        
         if config:
             self._enabled = config.get("enabled", False)
             self._app_id = config.get("app_id")
@@ -1716,3 +1773,7 @@ class NullbrSearch(_PluginBase):
             logger.info("Nullbr资源搜索插件已停止")
         except Exception as e:
             logger.error(f"插件停止异常: {str(e)}")
+
+
+# 导出插件类，确保插件系统能正确识别
+__all__ = ['NullbrSearch']
