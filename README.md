@@ -9,7 +9,7 @@ Nullbr资源搜索插件是为MoviePilot设计的智能资源搜索插件，通�
 复制本仓库地址到插件源配置即可在市场搜到本插件：
 
 1. 在MoviePilot设置中找到「插件」→「插件源」
-2. 添加插件源：`https://github.com/Hqyel/MoviePilot-Plugins`
+2. 添加插件源：`[https://github.com/Hqyel/MoviePilot-Plugins](https://github.com/Hqyel/MoviePilot-Plugins-Third)`
 3. 保存后在插件市场搜索「Nullbr资源搜索」
 4. 点击安装并配置相关参数
 
