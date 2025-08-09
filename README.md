@@ -71,6 +71,12 @@ Nullbr资源搜索插件是为MoviePilot设计的智能资源搜索插件，通�
 
 欢迎提交Issue和Pull Request来改进这个插件！
 
+## 🙏 致谢
+
+- 感谢MoviePilot项目提供的优秀插件框架
+- 感谢Nullbr提供的资源API服务
+- 感谢iLay1678大佬，CMS接口部分参考了他项目：[nullbr_cms_bot](https://github.com/iLay1678/nullbr_cms_bot)
+
 ## 📄 许可证
 
 本插件基于GPL-3.0许可证开源。
