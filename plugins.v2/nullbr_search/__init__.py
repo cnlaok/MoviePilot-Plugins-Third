@@ -793,6 +793,11 @@ class nullbr_search(_PluginBase):
             # 搜索成功，更新统计
             self._stats['successful_searches'] += 1
             
+            # 清理之前的缓存（重要：避免缓存混乱）
+            if userid in self._user_resource_cache:
+                logger.info(f"清理用户 {userid} 的旧资源缓存")
+                del self._user_resource_cache[userid]
+            
             # 缓存搜索结果
             self._user_search_cache[userid] = {
                 'results': result.get('items', []),
@@ -924,6 +929,11 @@ class nullbr_search(_PluginBase):
                     userid=userid
                 )
             else:
+                # 清理之前的资源缓存（重要：避免缓存混乱）
+                if userid in self._user_resource_cache:
+                    logger.info(f"清理用户 {userid} 的旧资源缓存")
+                    del self._user_resource_cache[userid]
+                
                 # 如果有API_KEY，直接按优先级获取资源
                 self.post_message(
                     channel=channel,
@@ -992,6 +1002,11 @@ class nullbr_search(_PluginBase):
                 )
                 return
             
+            # 清理之前的资源缓存（重要：避免缓存混乱）
+            if userid in self._user_resource_cache:
+                logger.info(f"清理用户 {userid} 的旧资源缓存")
+                del self._user_resource_cache[userid]
+            
             # 发送获取中的提示
             self.post_message(
                 channel=channel,
@@ -1048,6 +1063,11 @@ class nullbr_search(_PluginBase):
                     userid=userid
                 )
                 return
+            
+            # 清理之前的资源缓存（重要：避免缓存混乱）
+            if userid in self._user_resource_cache:
+                logger.info(f"清理用户 {userid} 的旧资源缓存")
+                del self._user_resource_cache[userid]
             
             logger.info(f"按优先级获取资源: {title} (TMDB: {tmdbid})")
             logger.info(f"优先级顺序: {' > '.join(self._resource_priority)}")
