@@ -3,12 +3,13 @@
     "name": "Nullbr资源搜索",
     "description": "支持nullbr api接口直接搜索影视资源。支持115网盘、磁力、ed2k、m3u8等多种资源类型。",
     "labels": "资源",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "icon": "https://raw.githubusercontent.com/Hqyel/MoviePilot-Plugins/main/icons/nullbr.png",
     "author": "Hqyel",
     "level": 1,
     "history": {
-      "v2.0.0": "重构整理代码。"
+      "v2.0.0": "重构整理代码。",
+      "v2.0.1": "搜索资源时清理上一次搜索的缓存"
     }
   }
 }

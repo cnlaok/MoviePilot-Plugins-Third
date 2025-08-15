@@ -14,7 +14,7 @@ class nullbr_search(_PluginBase):
     plugin_name = "Nullbr资源搜索"
     plugin_desc = "支持nullbr api接口直接搜索影视资源。支持115网盘、磁力、ed2k、m3u8等多种资源类型。）"
     plugin_icon = "https://raw.githubusercontent.com/Hqyel/MoviePilot-Plugins/main/icons/nullbr.png"
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     plugin_author = "Hqyel"
     author_url = "https://github.com/Hqyel"
     plugin_config_prefix = "nullbr_search_"
